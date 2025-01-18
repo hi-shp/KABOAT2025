@@ -1,0 +1,49 @@
+rock5 부팅 및 ssh 연결법
+1. 보드 전원 키고 usb 연결 (번호 확인) 후 터미널에 입력
+sudo minicom --device /dev/ttyUSB0 --baudrate 1500000
+sudo nmcli dev wifi connect welcome_CU password 09090909
+ubuntu / skftoa2025
+ifconfig에서 ip주소 확인
+
+2. 새 터미널 열고 입력
+ssh ubuntu@192.168.43.###
+skftoa2025
+
+3. vscode실행 후 비밀번호 입력
+skftoa2025
+
+---------------------------------------------------------------
+전체설정 명령어
+nano ~/.bashrc
+
+---------------------------------------------------------------
+bringup launch 과정은 메인보드 정상 작동을 위해 준비하는 과정으로 
+선박사용을 위해선 아래 순서대로 진행 되어야 합니다.
+1. 메인보드 전원 On
+2. PC와 ssh로 원결 접속
+3. ssh 에서 bringup launch 수행
+4. 정상적으로 부팅 되었는지 로그 및 부팅음 확인
+---------------------------------------------------------------
+노트북에서 joy 명령어 실행
+ros2 run joy joy_node
+
+rock5보드에서 joy명령어 실행
+ros2 launch mechaship_teleop mechaship_teleop_joystick.launch.py
+ros2 run mechaship_teleop mechaship_teleop_keyboard
+----------------------------------------------------------------
+ssh에서 bring 명령어 실행
+ros2 launch mech~~~~~
+
+새 터미널에서 강제 값 입력
+ros2 topic pub /actuator/thruster/percentage std_msgs/Float32 "data: 50.0"
+ros2 topic pub /actuator/thruster/percentage std_msgs/Float32 "data: 0.0"
+
+000053949204036D  bf244d80-8b0c-4b8f-a9fd-275e18a78f04  wifi  wlP4p65s0 
+ubuntu@ubuntu:~$ ^C
+6buntu@ubuntu:~$ sudo nmcli device wifi connect 00005394204036D password 245552 
+Error: No network with SSID '00005394204036D' found.
+ubuntu@ubuntu:~$ 
+
+디스코드 업데이트 오류시 삭제 후 재설치
+sudo apt remove discord
+
