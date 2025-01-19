@@ -92,42 +92,44 @@ class NavigationNode(Node):
                 devide1(risk_map, k, 18)
 
         safe_angles = np.where(risk_map == 0)[0].tolist()
-heading_diff = self.target_imu_angle - self.imu_heading
-step_factor = 0.8
-desired_heading = self.imu_heading + heading_diff * step_factor
+        heading_diff = self.target_imu_angle - self.imu_heading
+        step_factor = 0.8
+        desired_heading = self.imu_heading + heading_diff * step_factor
 
-def find_largest_safe_zone_center(safe_angles):
-    # 연속된 구간을 탐색
-    safe_zones = []
-    start = None
-
-    for i in range(len(safe_angles)):
-        if start is None:
-            start = safe_angles[i]
-        if i == len(safe_angles) - 1 or safe_angles[i] + 1 != safe_angles[i + 1]:
-            end = safe_angles[i]
-            safe_zones.append((start, end))
+        def find_largest_safe_zone_center(safe_angles):
+            # 연속된 구간을 탐색
+            safe_zones = []
             start = None
 
-    # 가장 큰 구간 선택
-    if safe_zones:
-        largest_zone = max(safe_zones, key=lambda x: x[1] - x[0])
-        center = (largest_zone[0] + largest_zone[1]) // 2
-        return center
-    return None
+            for i in range(len(safe_angles)):
+                if start is None:
+                    start = safe_angles[i]
+                if (
+                    i == len(safe_angles) - 1
+                    or safe_angles[i] + 1 != safe_angles[i + 1]
+                ):
+                    end = safe_angles[i]
+                    safe_zones.append((start, end))
+                    start = None
 
-if len(safe_angles) > 0:
-    # 가장 큰 안전 구간의 중앙값 찾기
-    largest_safe_center = find_largest_safe_zone_center(safe_angles)
-    if largest_safe_center is not None:
-        raw_heading = float(largest_safe_center)
-    else:
-        raw_heading = float(
-            min(safe_angles, key=lambda x: abs(x - desired_heading))
-        )
-else:
-    raw_heading = 135.0
+            # 가장 큰 구간 선택
+            if safe_zones:
+                largest_zone = max(safe_zones, key=lambda x: x[1] - x[0])
+                center = (largest_zone[0] + largest_zone[1]) // 2
+                return center
+            return None
 
+        if len(safe_angles) > 0:
+            # 가장 큰 안전 구간의 중앙값 찾기
+            largest_safe_center = find_largest_safe_zone_center(safe_angles)
+            if largest_safe_center is not None:
+                raw_heading = float(largest_safe_center)
+            else:
+                raw_heading = float(
+                    min(safe_angles, key=lambda x: abs(x - desired_heading))
+                )
+        else:
+            raw_heading = 135.0
 
         inverted_heading = 180.0 - raw_heading
 
