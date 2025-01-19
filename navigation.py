@@ -140,7 +140,7 @@ class NavigationNode(Node):
         if len(safe_angles) > 0:
             heading = float(min(safe_angles, key=lambda x: abs(x - desired_heading)))
         else:
-            heading = 45.0
+            heading = 45.0 #벽 만나면 좌회전
 
         if heading > 135.0:
             heading = 135.0
