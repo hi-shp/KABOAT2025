@@ -20,31 +20,13 @@ def set_risk_zone(array, center, spread):
     return array
 
 
-def find_largest_safe_zone_center(safe_angles):
-    safe_zones = []
-    start = None
-
-    for i in range(len(safe_angles)):
-        if start is None:
-            start = safe_angles[i]
-        if i == len(safe_angles) - 1 or safe_angles[i] + 1 != safe_angles[i + 1]:
-            end = safe_angles[i]
-            safe_zones.append((start, end))
-            start = None
-
-    if safe_zones:
-        largest_zone = max(safe_zones, key=lambda x: x[1] - x[0])
-        center = (largest_zone[0] + largest_zone[1]) // 2
-        return center
-    return None
-
-
 class NavigationNode(Node):
     def __init__(self):
         super().__init__("Auto_sailing")
-        self.imu_heading = None
-        self.max_risk_threshold = 80.0
+        self.imu_heading = 90.0
+        self.max_risk_threshold = 70.0
         self.key_target_degree = 90.0
+        self.target_imu_angle = 90.0
         lidar_qos_profile = rclpy.qos.QoSProfile(
             reliability=rclpy.qos.QoSReliabilityPolicy.RMW_QOS_POLICY_RELIABILITY_BEST_EFFORT,
             durability=rclpy.qos.QoSDurabilityPolicy.RMW_QOS_POLICY_DURABILITY_VOLATILE,
@@ -64,7 +46,7 @@ class NavigationNode(Node):
         self.thruster_publisher = self.create_publisher(
             Float32, "/actuator/thruster/percentage", 10
         )
-        thruster_msg = Float32(data=10.0)
+        thruster_msg = Float32(data=0.0)
         self.thruster_publisher.publish(thruster_msg)
 
         color = RgbwLedColor()
@@ -85,13 +67,20 @@ class NavigationNode(Node):
             msg.orientation.w,
         )
         roll_rad, pitch_rad, yaw_rad = euler_from_quaternion(quaternion)
-        yaw_degree = 90 - degrees(yaw_rad)
+        yaw = degrees(yaw_rad)
+        if -90.0 <= yaw <= 90.0:
+            yaw_degree = 90.0 - yaw
+        elif yaw > 90.0:
+            yaw_degree = 450.0 - yaw
+        elif yaw < -90.0:
+            yaw_degree = 90.0 - yaw
 
         if 0 <= yaw_degree <= 180:
             self.target_imu_angle = 90.0
         elif 180 < yaw_degree < 360:
             self.target_imu_angle = 270.0
-
+        else:
+            self.target_imu_angle = 90.0
         self.imu_heading = yaw_degree
 
     def lidar_callback(self, data):
@@ -122,21 +111,17 @@ class NavigationNode(Node):
 
         for k in range(181):
             if risk_values[k] >= self.max_risk_threshold:
-                set_risk_zone(risk_map, k, 20)  # total 40
+                set_risk_zone(risk_map, k, 30)
 
         safe_angles = np.where(risk_map == 0)[0].tolist()
-        heading_diff = self.target_imu_angle - self.imu_heading
-        step_factor = 0.8
-        desired_heading = self.imu_heading + heading_diff * step_factor
+        heading_diff = float(self.target_imu_angle - self.imu_heading)
+        step_factor = 1
+        desired_heading = self.target_imu_angle + heading_diff * step_factor
 
         if len(safe_angles) > 0:
-            largest_safe_center = find_largest_safe_zone_center(safe_angles)
-            if largest_safe_center is not None:
-                raw_heading = float(largest_safe_center)
-            else:
-                raw_heading = float(
-                    min(safe_angles, key=lambda x: abs(x - desired_heading))
-                )
+            raw_heading = float(
+                min(safe_angles, key=lambda x: abs(x - desired_heading))
+            )
         else:
             raw_heading = 135.0
 
@@ -149,7 +134,7 @@ class NavigationNode(Node):
         self.key_target_degree = inverted_heading
 
         self.get_logger().info(
-            f"key: {self.key_target_degree:5.1f}, IMU: {self.imu_heading:5.1f}, safe_angle: {largest_safe_center}"
+            f"key: {self.key_target_degree:5.1f}, IMU: {self.imu_heading:5.1f}, Safe: {safe_angles}"
         )
 
 
