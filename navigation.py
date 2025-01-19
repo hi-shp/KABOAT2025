@@ -6,10 +6,11 @@ from sensor_msgs.msg import LaserScan, Imu
 from std_msgs.msg import Float32
 from rclpy.qos import qos_profile_sensor_data
 from tf_transformations import euler_from_quaternion
+from mechaship_interfaces.msg import RgbwLedColor
 from math import degrees
 
 
-def devide1(array, center, spread):
+def set_risk_zone(array, center, spread):
     array[center] = 1
     for i in range(1, spread + 1):
         if center - i >= 0:
@@ -19,10 +20,28 @@ def devide1(array, center, spread):
     return array
 
 
+def find_largest_safe_zone_center(safe_angles):
+    safe_zones = []
+    start = None
+
+    for i in range(len(safe_angles)):
+        if start is None:
+            start = safe_angles[i]
+        if i == len(safe_angles) - 1 or safe_angles[i] + 1 != safe_angles[i + 1]:
+            end = safe_angles[i]
+            safe_zones.append((start, end))
+            start = None
+
+    if safe_zones:
+        largest_zone = max(safe_zones, key=lambda x: x[1] - x[0])
+        center = (largest_zone[0] + largest_zone[1]) // 2
+        return center
+    return None
+
+
 class NavigationNode(Node):
     def __init__(self):
         super().__init__("Auto_sailing")
-        self.target_imu_angle = 90.0
         self.imu_heading = None
         self.max_risk_threshold = 80.0
         self.key_target_degree = 90.0
@@ -38,12 +57,20 @@ class NavigationNode(Node):
         self.create_subscription(
             Imu, "/imu", self.imu_callback, qos_profile_sensor_data
         )
+        self.rgbw_led_publisher = self.create_publisher(
+            RgbwLedColor, "/actuator/rgbwled/color", 10
+        )
         self.key_publisher = self.create_publisher(Float32, "/actuator/key/degree", 10)
         self.thruster_publisher = self.create_publisher(
             Float32, "/actuator/thruster/percentage", 10
         )
         thruster_msg = Float32(data=10.0)
         self.thruster_publisher.publish(thruster_msg)
+
+        color = RgbwLedColor()
+        color.green = 20
+        self.rgbw_led_publisher.publish(color)
+
         self.create_timer(0.1, self.timer_callback)
 
     def timer_callback(self):
@@ -59,6 +86,12 @@ class NavigationNode(Node):
         )
         roll_rad, pitch_rad, yaw_rad = euler_from_quaternion(quaternion)
         yaw_degree = 90 - degrees(yaw_rad)
+
+        if 0 <= yaw_degree <= 180:
+            self.target_imu_angle = 90.0
+        elif 180 < yaw_degree < 360:
+            self.target_imu_angle = 270.0
+
         self.imu_heading = yaw_degree
 
     def lidar_callback(self, data):
@@ -89,38 +122,14 @@ class NavigationNode(Node):
 
         for k in range(181):
             if risk_values[k] >= self.max_risk_threshold:
-                devide1(risk_map, k, 18)
+                set_risk_zone(risk_map, k, 20)  # total 40
 
         safe_angles = np.where(risk_map == 0)[0].tolist()
         heading_diff = self.target_imu_angle - self.imu_heading
         step_factor = 0.8
         desired_heading = self.imu_heading + heading_diff * step_factor
 
-        def find_largest_safe_zone_center(safe_angles):
-            # 연속된 구간을 탐색
-            safe_zones = []
-            start = None
-
-            for i in range(len(safe_angles)):
-                if start is None:
-                    start = safe_angles[i]
-                if (
-                    i == len(safe_angles) - 1
-                    or safe_angles[i] + 1 != safe_angles[i + 1]
-                ):
-                    end = safe_angles[i]
-                    safe_zones.append((start, end))
-                    start = None
-
-            # 가장 큰 구간 선택
-            if safe_zones:
-                largest_zone = max(safe_zones, key=lambda x: x[1] - x[0])
-                center = (largest_zone[0] + largest_zone[1]) // 2
-                return center
-            return None
-
         if len(safe_angles) > 0:
-            # 가장 큰 안전 구간의 중앙값 찾기
             largest_safe_center = find_largest_safe_zone_center(safe_angles)
             if largest_safe_center is not None:
                 raw_heading = float(largest_safe_center)
@@ -132,7 +141,6 @@ class NavigationNode(Node):
             raw_heading = 135.0
 
         inverted_heading = 180.0 - raw_heading
-
         if inverted_heading > 135.0:
             inverted_heading = 135.0
         if inverted_heading < 45.0:
@@ -141,7 +149,7 @@ class NavigationNode(Node):
         self.key_target_degree = inverted_heading
 
         self.get_logger().info(
-            f"key: {self.key_target_degree:5.1f}, IMU: {self.imu_heading:5.1f}, safe_angles: {safe_angles}"
+            f"key: {self.key_target_degree:5.1f}, IMU: {self.imu_heading:5.1f}, safe_angle: {largest_safe_center}"
         )
 
 
