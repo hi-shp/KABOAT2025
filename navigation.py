@@ -8,6 +8,12 @@ from rclpy.qos import qos_profile_sensor_data
 from tf_transformations import euler_from_quaternion
 from mechaship_interfaces.msg import RgbwLedColor
 from math import degrees
+from rclpy.qos import (
+    QoSProfile,
+    QoSReliabilityPolicy,
+    QoSHistoryPolicy,
+    QoSDurabilityPolicy,
+)
 
 
 def set_risk_zone(array, center, spread):
@@ -24,14 +30,26 @@ class NavigationNode(Node):
     def __init__(self):
         super().__init__("Auto_sailing")
         self.imu_heading = 90.0
-        self.max_risk_threshold = 70.0
+        self.max_risk_threshold = 70.0 #위험도 한계값
         self.key_target_degree = 90.0
         self.target_imu_angle = 90.0
-        lidar_qos_profile = rclpy.qos.QoSProfile(
-            reliability=rclpy.qos.QoSReliabilityPolicy.RMW_QOS_POLICY_RELIABILITY_BEST_EFFORT,
-            durability=rclpy.qos.QoSDurabilityPolicy.RMW_QOS_POLICY_DURABILITY_VOLATILE,
-            history=rclpy.qos.QoSHistoryPolicy.RMW_QOS_POLICY_HISTORY_KEEP_LAST,
+        lidar_qos_profile = QoSProfile(
+            reliability=QoSReliabilityPolicy.BEST_EFFORT,
+            durability=QoSDurabilityPolicy.VOLATILE,
+            history=QoSHistoryPolicy.KEEP_LAST,
             depth=5,
+        )
+        gps_qos_profile = QoSProfile(
+            reliability=QoSReliabilityPolicy.RELIABLE,
+            durability=QoSDurabilityPolicy.VOLATILE,
+            history=QoSHistoryPolicy.KEEP_LAST,
+            depth=10,
+        )
+        imu_qos_profile = QoSProfile(
+            reliability=QoSReliabilityPolicy.BEST_EFFORT,
+            durability=QoSDurabilityPolicy.VOLATILE,
+            history=QoSHistoryPolicy.KEEP_LAST,
+            depth=10,
         )
         self.lidar_subscription = self.create_subscription(
             LaserScan, "/scan", self.lidar_callback, lidar_qos_profile
@@ -46,7 +64,7 @@ class NavigationNode(Node):
         self.thruster_publisher = self.create_publisher(
             Float32, "/actuator/thruster/percentage", 10
         )
-        thruster_msg = Float32(data=0.0)
+        thruster_msg = Float32(data=0.0) #속도값 (15~)
         self.thruster_publisher.publish(thruster_msg)
 
         color = RgbwLedColor()
@@ -68,12 +86,10 @@ class NavigationNode(Node):
         )
         roll_rad, pitch_rad, yaw_rad = euler_from_quaternion(quaternion)
         yaw = degrees(yaw_rad)
-        if -90.0 <= yaw <= 90.0:
+        if yaw <= 90.0:
             yaw_degree = 90.0 - yaw
         elif yaw > 90.0:
             yaw_degree = 450.0 - yaw
-        elif yaw < -90.0:
-            yaw_degree = 90.0 - yaw
 
         if 0 <= yaw_degree <= 180:
             self.target_imu_angle = 90.0
@@ -97,7 +113,7 @@ class NavigationNode(Node):
 
         for i in range(len(relevant_data)):
             length = relevant_data[i]
-            angle_index = round(i * 180 / len(relevant_data))
+            angle_index = round((len(relevant_data) - 1 - i) * 180 / len(relevant_data))
             cumulative_distance[angle_index] += length
             sample_count[angle_index] += 1
 
@@ -111,30 +127,30 @@ class NavigationNode(Node):
 
         for k in range(181):
             if risk_values[k] >= self.max_risk_threshold:
-                set_risk_zone(risk_map, k, 30)
+                set_risk_zone(risk_map, k, 25) #장애물 인식 너비
 
         safe_angles = np.where(risk_map == 0)[0].tolist()
         heading_diff = float(self.target_imu_angle - self.imu_heading)
         step_factor = 1
-        desired_heading = self.target_imu_angle + heading_diff * step_factor
+        if self.target_imu_angle == 90.0:
+            desired_heading = self.target_imu_angle + heading_diff * step_factor
+        else:
+            desired_heading = self.target_imu_angle + heading_diff * step_factor - 180.0
 
         if len(safe_angles) > 0:
-            raw_heading = float(
-                min(safe_angles, key=lambda x: abs(x - desired_heading))
-            )
+            heading = float(min(safe_angles, key=lambda x: abs(x - desired_heading)))
         else:
-            raw_heading = 135.0
+            heading = 45.0
 
-        inverted_heading = 180.0 - raw_heading
-        if inverted_heading > 135.0:
-            inverted_heading = 135.0
-        if inverted_heading < 45.0:
-            inverted_heading = 45.0
+        if heading > 135.0:
+            heading = 135.0
+        if heading < 45.0:
+            heading = 45.0
 
-        self.key_target_degree = inverted_heading
+        self.key_target_degree = heading
 
         self.get_logger().info(
-            f"key: {self.key_target_degree:5.1f}, IMU: {self.imu_heading:5.1f}, Safe: {safe_angles}"
+            f"key: {self.key_target_degree:5.1f}, IMU: {self.imu_heading:5.1f}, Target IMU: {self.target_imu_angle},"
         )
 
 
